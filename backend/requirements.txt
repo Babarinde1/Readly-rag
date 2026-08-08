@@ -1,0 +1,20 @@
+langchain
+langchain-core
+langchain-community
+pypdf
+# pymupdf
+langchain-text-splitters
+# pymupdf4llm
+sentence-transformers
+faiss-cpu
+chromadb
+langchain-groq
+python-dotenv
+langchain-text-splitters
+fastapi
+uvicorn 
+python-multipart
+
+#for a slower network use pip install -i https://mirrors.aliyun.com/pypi/simple --default-timeout=1000 -r requirements.txt
+# uvicorn src.api.main:app --reload
+# .\venv312\Scripts\Activate.ps1
