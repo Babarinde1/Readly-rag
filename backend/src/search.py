@@ -79,7 +79,7 @@ class RAGSearch:
     def __init__(
         self,
         persist_dir: str = "../data/faiss_store",
-        embedding_model: str = "all-MiniLM-L6-v2",
+        embedding_model: str = "embed-english-v3.0",
         llm_model: str = "openai/gpt-oss-120b",
         documents=None
     ):

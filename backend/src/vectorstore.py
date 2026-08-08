@@ -1,4 +1,5 @@
 import os
+import time
 import faiss
 import numpy as np
 import pickle
@@ -46,10 +47,10 @@ class FaissVectorStore:
         )
 
     # ---------------------------------------------------------
-    # Embed helper (batches to respect Cohere's per-call limit)
+    # Embed helper (batches + retries to survive flaky connections)
     # ---------------------------------------------------------
 
-    def _embed(self, texts: List[str], input_type: str) -> np.ndarray:
+    def _embed(self, texts: List[str], input_type: str, max_retries: int = 3) -> np.ndarray:
 
         batch_size = 96  # Cohere embed endpoint limit per call
         all_embeddings = []
@@ -57,13 +58,27 @@ class FaissVectorStore:
         for i in range(0, len(texts), batch_size):
             batch = texts[i:i + batch_size]
 
-            response = self.co.embed(
-                texts=batch,
-                model=self.embedding_model,
-                input_type=input_type
-            )
+            for attempt in range(1, max_retries + 1):
+                try:
+                    response = self.co.embed(
+                        texts=batch,
+                        model=self.embedding_model,
+                        input_type=input_type
+                    )
+                    all_embeddings.extend(response.embeddings)
+                    break  # success -- move to next batch
 
-            all_embeddings.extend(response.embeddings)
+                except Exception as e:
+                    if attempt == max_retries:
+                        print(f"[ERROR] Embedding batch {i // batch_size + 1} failed after {max_retries} attempts: {e}")
+                        raise
+
+                    wait_time = 2 ** attempt  # 2s, 4s, 8s
+                    print(
+                        f"[WARN] Embedding batch {i // batch_size + 1} failed "
+                        f"(attempt {attempt}/{max_retries}): {e}. Retrying in {wait_time}s..."
+                    )
+                    time.sleep(wait_time)
 
         return np.asarray(all_embeddings, dtype="float32")
 
