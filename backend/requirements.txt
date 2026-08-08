@@ -5,7 +5,8 @@ pypdf
 # pymupdf
 langchain-text-splitters
 # pymupdf4llm
-sentence-transformers
+# sentence-transformers
+cohere
 faiss-cpu
 chromadb
 langchain-groq
