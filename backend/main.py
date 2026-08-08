@@ -1,16 +1,10 @@
+import os
 import shutil
 import uuid
 from pathlib import Path
 
-from fastapi import (
-    FastAPI,
-    UploadFile,
-    File,
-    HTTPException
-)
-
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-
 from pydantic import BaseModel
 
 from src.data_loader import load_document
@@ -32,9 +26,15 @@ app = FastAPI(
 # CORS
 # =========================================================
 
+frontend_url = os.getenv(
+    "FRONTEND_URL",
+    "http://localhost:5173"
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        frontend_url,
         "http://localhost:5173",
     ],
     allow_credentials=True,
@@ -69,7 +69,6 @@ rag_sessions = {}
 # =========================================================
 
 class QuestionRequest(BaseModel):
-
     document_id: str
     question: str
 
@@ -80,9 +79,9 @@ class QuestionRequest(BaseModel):
 
 @app.get("/")
 def root():
-
     return {
-        "message": "READLY API is running"
+        "message": "READLY API is running",
+        "status": "healthy"
     }
 
 
@@ -101,11 +100,20 @@ async def upload_document(
         ".txt"
     }
 
+    # -----------------------------------------------------
+    # Validate filename
+    # -----------------------------------------------------
+
     if not file.filename:
+
         raise HTTPException(
             status_code=400,
             detail="No filename provided."
         )
+
+    # -----------------------------------------------------
+    # Validate extension
+    # -----------------------------------------------------
 
     extension = Path(
         file.filename
@@ -120,6 +128,10 @@ async def upload_document(
                 "Upload PDF, DOCX or TXT."
             )
         )
+
+    # -----------------------------------------------------
+    # Generate document ID
+    # -----------------------------------------------------
 
     document_id = str(
         uuid.uuid4()
@@ -139,7 +151,10 @@ async def upload_document(
 
     try:
 
+        # -------------------------------------------------
         # Save uploaded file
+        # -------------------------------------------------
+
         with open(
             file_path,
             "wb"
@@ -154,7 +169,10 @@ async def upload_document(
             f"[INFO] Saved document: {file_path}"
         )
 
+        # -------------------------------------------------
         # Load document
+        # -------------------------------------------------
+
         documents = load_document(
             str(file_path)
         )
@@ -169,12 +187,23 @@ async def upload_document(
                 )
             )
 
+        print(
+            f"[INFO] Extracted "
+            f"{len(documents)} document sections."
+        )
+
+        # -------------------------------------------------
         # Create document-specific RAG
+        # -------------------------------------------------
+
         rag = RAGSearch(
             documents=documents
         )
 
+        # -------------------------------------------------
         # Store session
+        # -------------------------------------------------
+
         rag_sessions[document_id] = {
             "rag": rag,
             "filename": filename,
@@ -219,6 +248,10 @@ async def ask_question(
     request: QuestionRequest
 ):
 
+    # -----------------------------------------------------
+    # Find document session
+    # -----------------------------------------------------
+
     session = rag_sessions.get(
         request.document_id
     )
@@ -227,8 +260,15 @@ async def ask_question(
 
         raise HTTPException(
             status_code=404,
-            detail="Document session not found."
+            detail=(
+                "Document session not found. "
+                "Please upload the document again."
+            )
         )
+
+    # -----------------------------------------------------
+    # Validate question
+    # -----------------------------------------------------
 
     question = request.question.strip()
 
@@ -242,6 +282,10 @@ async def ask_question(
     try:
 
         rag = session["rag"]
+
+        # -------------------------------------------------
+        # Ask RAG system
+        # -------------------------------------------------
 
         result = rag.search_and_answer(
             question,
@@ -264,3 +308,29 @@ async def ask_question(
             status_code=500,
             detail="Failed to answer question."
         )
+
+
+# =========================================================
+# Optional: document information
+# =========================================================
+
+@app.get("/document/{document_id}")
+async def document_info(
+    document_id: str
+):
+
+    session = rag_sessions.get(
+        document_id
+    )
+
+    if session is None:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Document session not found."
+        )
+
+    return {
+        "document_id": document_id,
+        "filename": session["filename"]
+    }

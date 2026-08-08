@@ -16,5 +16,5 @@ uvicorn
 python-multipart
 
 #for a slower network use pip install -i https://mirrors.aliyun.com/pypi/simple --default-timeout=1000 -r requirements.txt
-# uvicorn src.api.main:app --reload
+# uvicorn main:app --host 0.0.0.0 --port 8000
 # .\venv312\Scripts\Activate.ps1

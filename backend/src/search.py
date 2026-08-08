@@ -1,6 +1,5 @@
 import os
 import re
-from pathlib import Path
 
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
@@ -9,36 +8,40 @@ from src.vectorstore import FaissVectorStore
 from src.data_loader import load_all_documents
 
 
-# ---------------------------------------------------------
+# =========================================================
 # Environment
-# ---------------------------------------------------------
+# =========================================================
 
-load_dotenv(Path(__file__).resolve().parent / ".env")
-
-os.environ["HF_HUB_OFFLINE"] = "1"
-os.environ["TRANSFORMERS_OFFLINE"] = "1"
+load_dotenv()
 
 
-# ---------------------------------------------------------
+# =========================================================
 # Markdown cleaning
-# ---------------------------------------------------------
+# =========================================================
 
 def clean_answer(text: str) -> str:
-    """
-    Clean unnecessary Markdown formatting while preserving
-    numbered and bulleted lists.
-    """
+
 
     if not text:
         return ""
 
-    # Remove bold
+    # Remove bold Markdown
     # **important** -> important
-    text = re.sub(r"\*\*(.*?)\*\*", r"\1", text)
+    text = re.sub(
+        r"\*\*(.*?)\*\*",
+        r"\1",
+        text,
+        flags=re.DOTALL
+    )
 
     # Remove underscore bold
     # __important__ -> important
-    text = re.sub(r"__(.*?)__", r"\1", text)
+    text = re.sub(
+        r"__(.*?)__",
+        r"\1",
+        text,
+        flags=re.DOTALL
+    )
 
     # Remove italic Markdown
     # *important* -> important
@@ -58,14 +61,18 @@ def clean_answer(text: str) -> str:
     )
 
     # Normalize excessive blank lines
-    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(
+        r"\n{3,}",
+        "\n\n",
+        text
+    )
 
     return text.strip()
 
 
-# ---------------------------------------------------------
+# =========================================================
 # RAG Search
-# ---------------------------------------------------------
+# =========================================================
 
 class RAGSearch:
 
@@ -76,17 +83,23 @@ class RAGSearch:
         llm_model: str = "openai/gpt-oss-120b",
         documents=None
     ):
-
         """
-        If documents are provided, build a fresh vector store
-        for the uploaded document.
+        Create a RAG system.
 
-        Otherwise, use the existing persisted vector store.
+        If documents are provided:
+            Build a document-specific FAISS index.
+
+        If documents are not provided:
+            Load the existing persisted FAISS index.
         """
+
+        # -------------------------------------------------
+        # Create vector store
+        # -------------------------------------------------
 
         self.vectorstore = FaissVectorStore(
-            persist_dir,
-            embedding_model
+            persist_dir=persist_dir,
+            embedding_model=embedding_model
         )
 
         # -------------------------------------------------
@@ -95,12 +108,17 @@ class RAGSearch:
 
         if documents is not None:
 
+            print(
+                "[INFO] Building vector store "
+                "for uploaded document..."
+            )
+
             self.vectorstore.build_from_documents(
                 documents
             )
 
         # -------------------------------------------------
-        # Existing document store
+        # Existing persisted store
         # -------------------------------------------------
 
         else:
@@ -115,28 +133,46 @@ class RAGSearch:
                 "metadata.pkl"
             )
 
-            if not (
-                os.path.exists(faiss_path)
-                and os.path.exists(meta_path)
+            if (
+                not os.path.exists(faiss_path)
+                or not os.path.exists(meta_path)
             ):
 
-                docs = load_all_documents("../data")
+                print(
+                    "[INFO] Persistent FAISS store "
+                    "not found. Building one..."
+                )
+
+                documents = load_all_documents(
+                    "../data"
+                )
 
                 self.vectorstore.build_from_documents(
-                    docs
+                    documents
                 )
 
             else:
 
+                print(
+                    "[INFO] Loading existing "
+                    "FAISS store..."
+                )
+
                 self.vectorstore.load()
 
         # -------------------------------------------------
-        # Groq LLM
+        # Groq
         # -------------------------------------------------
 
         groq_api_key = os.getenv(
             "GROQ_API_KEY"
         )
+
+        if not groq_api_key:
+
+            raise ValueError(
+                "GROQ_API_KEY is not configured."
+            )
 
         self.llm = ChatGroq(
             groq_api_key=groq_api_key,
@@ -148,9 +184,9 @@ class RAGSearch:
         )
 
 
-    # -----------------------------------------------------
+    # =====================================================
     # Question answering
-    # -----------------------------------------------------
+    # =====================================================
 
     def search_and_answer(
         self,
@@ -160,9 +196,18 @@ class RAGSearch:
 
         try:
 
-            # ---------------------------------------------
+            query = query.strip()
+
+            if not query:
+
+                return {
+                    "answer": "Please enter a question.",
+                    "sources": []
+                }
+
+            # -------------------------------------------------
             # Retrieve relevant chunks
-            # ---------------------------------------------
+            # -------------------------------------------------
 
             results = self.vectorstore.query(
                 query,
@@ -179,13 +224,11 @@ class RAGSearch:
                     "sources": []
                 }
 
-
-            # ---------------------------------------------
+            # -------------------------------------------------
             # Build context
-            # ---------------------------------------------
+            # -------------------------------------------------
 
             context_parts = []
-
             sources = []
 
             for i, result in enumerate(
@@ -211,9 +254,9 @@ class RAGSearch:
                     "page"
                 )
 
-                # -----------------------------------------
-                # Context for LLM
-                # -----------------------------------------
+                # Ignore empty chunks
+                if not text.strip():
+                    continue
 
                 context_parts.append(
                     f"""
@@ -225,9 +268,9 @@ Page: {page if page is not None else "N/A"}
 """
                 )
 
-                # -----------------------------------------
-                # Convert NumPy values to Python values
-                # -----------------------------------------
+                # -------------------------------------------------
+                # Convert NumPy values to JSON-safe Python values
+                # -------------------------------------------------
 
                 distance = result.get(
                     "distance"
@@ -237,9 +280,14 @@ Page: {page if page is not None else "N/A"}
                     distance = float(distance)
 
                 if page is not None:
+
                     try:
                         page = int(page)
-                    except (ValueError, TypeError):
+
+                    except (
+                        ValueError,
+                        TypeError
+                    ):
                         pass
 
                 sources.append(
@@ -250,34 +298,50 @@ Page: {page if page is not None else "N/A"}
                     }
                 )
 
+            # -------------------------------------------------
+            # Make context
+            # -------------------------------------------------
 
             context = "\n\n".join(
                 context_parts
             )
 
+            if not context:
 
-            # ---------------------------------------------
+                return {
+                    "answer": (
+                        "I couldn't find relevant "
+                        "information in the document."
+                    ),
+                    "sources": []
+                }
+
+            # -------------------------------------------------
             # Prompt
-            # ---------------------------------------------
+            # -------------------------------------------------
 
             prompt = f"""
 You are READLY, a document question-answering assistant.
 
-Your job is to answer the user's question using ONLY
-the information contained in the provided document context.
+Answer the user's question using ONLY the information
+contained in the provided document context.
 
-IMPORTANT RULES:
+RULES:
 
 1. Do not use outside knowledge.
 2. Do not invent information.
-3. If the answer cannot be found in the document,
-   clearly say that the document does not contain
-   enough information.
+3. If the answer cannot be found in the context,
+   say that the document does not contain enough
+   information to answer the question.
 4. Give a clear and concise answer.
-5. Preserve useful numbered and bulleted lists.
-6. Do not create fake sources.
-7. Do not create fake page numbers.
-8. Only information present in the context may be used.
+5. Use numbered lists when explaining multiple steps
+   or items.
+6. Use bullet points when appropriate.
+7. Do not use Markdown headings.
+8. Do not use bold or italic Markdown.
+9. Do not create fake sources.
+10. Do not create fake page numbers.
+11. Only use page numbers supplied in the context.
 
 DOCUMENT CONTEXT:
 
@@ -290,10 +354,9 @@ USER QUESTION:
 ANSWER:
 """
 
-
-            # ---------------------------------------------
+            # -------------------------------------------------
             # Generate answer
-            # ---------------------------------------------
+            # -------------------------------------------------
 
             response = self.llm.invoke(
                 prompt
@@ -303,21 +366,19 @@ ANSWER:
                 response.content
             )
 
-
-            # ---------------------------------------------
-            # Return result
-            # ---------------------------------------------
+            # -------------------------------------------------
+            # Return
+            # -------------------------------------------------
 
             return {
                 "answer": answer,
                 "sources": sources
             }
 
-
         except Exception as e:
 
             print(
-                f"[ERROR] Error during "
+                "[ERROR] Error during "
                 f"search and answer: {e}"
             )
 
@@ -330,9 +391,9 @@ ANSWER:
             }
 
 
-# ---------------------------------------------------------
+# =========================================================
 # Test
-# ---------------------------------------------------------
+# =========================================================
 
 if __name__ == "__main__":
 
