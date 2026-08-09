@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import "./App.css";
 import ThreeBackground from "./ThreeBackground";
-const API_URL = "http://127.0.0.1:8000";
+const API_URL = "https://readly-rag.onrender.com";
 
 function App() {
   // -----------------------------

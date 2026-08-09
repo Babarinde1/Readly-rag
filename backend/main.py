@@ -36,6 +36,7 @@ app.add_middleware(
     allow_origins=[
         frontend_url,
         "http://localhost:5173",
+        "https://readly-doc.vercel.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
