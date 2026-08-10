@@ -15,7 +15,7 @@ langchain-text-splitters
 fastapi
 uvicorn 
 python-multipart
-
+docx2txt
 #for a slower network use pip install -i https://mirrors.aliyun.com/pypi/simple --default-timeout=1000 -r requirements.txt
 # uvicorn main:app --host 0.0.0.0 --port 8000
 # .\venv312\Scripts\Activate.ps1
